@@ -16,26 +16,47 @@ std::tuple<uint64_t, uint64_t, uint64_t> parse_line(std::string& line,
 {
     static uint64_t next_entity_id = 0;
     static uint64_t next_relation_id = 0;
+    static std::string s(512, '\0');
+    static std::string p(512, '\0');
+    static std::string o(512, '\0');
 
-    auto after_s = line.find_first_of(' ');
-    std::string_view s{line.c_str(), after_s};
-    auto after_p = line.find_first_of(' ', after_s + 1);
-    std::string_view p{line.c_str() + after_s + 1, after_p - after_s - 1};
-    auto after_o = line.find_first_of(' ', after_p + 1);
-    std::string_view o{line.c_str() + after_p + 1, after_o - after_p - 1};
+    {
+        auto after_s = line.find_first_of(' ');
+        s.clear();
+        s.append(line.c_str(), after_s);
 
-    std::string s_str{s};
-    auto [it_s, added_s] = entity2id.try_emplace(s_str, next_entity_id);
-    if (added_s)
-        next_entity_id++;
-    std::string p_str{p};
-    auto [it_p, added_p] = relation2id.try_emplace(p_str, next_relation_id);
-    if (added_p)
-        next_relation_id++;
-    auto [it_o, added_o] = entity2id.try_emplace(std::string{o}, next_entity_id);
-    if (added_o)
-        next_entity_id++;
-    return {entity2id.at(s_str), relation2id.at(p_str), it_o->second};
+        auto after_p = line.find_first_of(' ', after_s + 1);
+        p.clear();
+        p.append(line.c_str() + after_s + 1, after_p - after_s - 1);
+
+        auto after_o = line.find_first_of(' ', after_p + 1);
+        o.clear();
+        o.append(line.c_str() + after_p + 1, after_o - after_p - 1);
+    }
+
+    auto const s_id = [&]()
+    {
+        auto [it_s, added_s] = entity2id.try_emplace(s, next_entity_id);
+        if (added_s)
+            next_entity_id++;
+        return it_s->second;
+    }();
+
+    auto const p_id = [&]()
+    {
+        auto [it_p, added_p] = relation2id.try_emplace(p, next_relation_id);
+        if (added_p)
+            next_relation_id++;
+        return it_p->second;
+    }();
+    auto const o_id = [&]()
+    {
+        auto [it_o, added_o] = entity2id.try_emplace(o, next_entity_id);
+        if (added_o)
+            next_entity_id++;
+        return it_o->second;
+    }();
+    return {s_id, p_id, o_id};
 }
 
 
