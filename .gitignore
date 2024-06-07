@@ -167,3 +167,4 @@ _deps
 
 # End of https://www.toptal.com/developers/gitignore/api/c++,cmake,clion
 build_dir/ntriples_to_ids
+build_dir/*/*.csv
