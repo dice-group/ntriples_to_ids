@@ -1,14 +1,13 @@
 #include <fstream>
 #include <iostream>
-#include <tsl/sparse_map.h>
-#include <unordered_dense.h>
+#include <btree/map.h>
 #include <format>
 #include <filesystem>
 
 
 namespace fs = std::filesystem;
 
-using str2id_type = tsl::sparse_map<std::string, uint64_t, ankerl::unordered_dense::hash<std::string>>;
+using str2id_type = btree::map<std::string, uint64_t>;
 
 std::tuple<uint64_t, uint64_t, uint64_t> parse_line(std::string& line,
                                                     str2id_type& entity2id,
