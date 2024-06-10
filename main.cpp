@@ -59,6 +59,23 @@ std::tuple<uint64_t, uint64_t, uint64_t> parse_line(std::string& line,
 }
 
 
+void write_map_to_csv(fs::path const& csv_file_path, str2id_type const& map)
+{
+    uint64_t mappings_written = 0;
+    std::ofstream outfile(csv_file_path);
+    for (auto const& [relation, id] : map)
+    {
+        outfile << std::format("{},{}\n", relation, id);
+        if (++mappings_written % 10'000'000UL == 0)
+        {
+            outfile.flush();
+            std::cerr << std::format("{} mappings exported.", mappings_written) << std::endl;
+        }
+    }
+    outfile.flush();
+};
+
+
 int main(int argc, char* argv[])
 {
     if (argc != 3)
@@ -96,34 +113,39 @@ int main(int argc, char* argv[])
         std::string line;
         while (std::getline(infile, line))
         {
-            if (line_number % 10'000'000UL == 0)
-                std::cerr << std::format("{} lines done.", line_number) << std::endl;
             auto [s,p,o] = parse_line(line, entity2id, relation2id);
             outfile << std::format("{},{},{}\n", s, p, o);
             // outfile_bin.write(reinterpret_cast<const char*>(&s), sizeof(s));
             // outfile_bin.write(reinterpret_cast<const char*>(&p), sizeof(p));
             // outfile_bin.write(reinterpret_cast<const char*>(&o), sizeof(o));
-            line_number++;
+            if (++line_number % 10'000'000UL == 0)
+            {
+                outfile.flush();
+                std::cerr <<
+                    std::format("{} lines translated.\n"
+                                "{} entities found.\n"
+                                "{} relations found.\n",
+                                line_number, entity2id.size(), relation2id.size())
+                    << std::endl;
+            }
         }
+        outfile.flush();
     }
     std::cerr << "Finished indexing the ntriple file. " << std::endl;
+    std::cerr <<
+        std::format("total data processed:\n"
+                    "{} lines translated.\n"
+                    "{} entities found.\n"
+                    "{} relations found.\n",
+                    line_number, entity2id.size(), relation2id.size())
+        << std::endl;
+
+    auto const dump_map = [&](auto const& name, auto const& map)
     {
-        std::ofstream outfile(output_folder / format("{}.entity2id.csv", file_stem));
-        for (auto const& [entity, id] : entity2id)
-        {
-            outfile << std::format("{},{}\n", entity, id);
-        }
-    }
-
-    std::cerr << "Finished dumping entity2id mapping. " << std::endl;
-
-    {
-        std::ofstream outfile(output_folder / format("{}.relation2id.csv", file_stem));
-        for (auto const& [relation, id] : relation2id)
-        {
-            outfile << std::format("{},{}\n", relation, id);
-        }
-    }
-
-    std::cerr << "Finished dumping relation2id mapping. " << std::endl;
+        std::cerr << std::format("Start dumping {} mapping. ", name) << std::endl;
+        write_map_to_csv(output_folder / format("{}.{}.csv", file_stem, name), map);
+        std::cerr << std::format("Finished dumping {} mapping. ", name) << std::endl;
+    };
+    dump_map("entity2id", entity2id);
+    dump_map("relation2id", relation2id);
 }
