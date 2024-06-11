@@ -1,13 +1,36 @@
 #include <fstream>
 #include <iostream>
 #include <btree/map.h>
-#include <format>
 #include <filesystem>
-
+#include <format>
+#include <chrono>
+#include <ctime>
 
 namespace fs = std::filesystem;
 
 using str2id_type = btree::map<std::string, uint64_t>;
+
+
+std::string get_timestamp_str()
+{
+    return std::format("{}", std::chrono::zoned_time{std::chrono::current_zone(), std::chrono::system_clock::now()});
+}
+
+std::string get_current_rss_ram_str()
+{
+    std::ifstream statm("/proc/self/statm");
+    if (!statm.is_open())
+    {
+        return "Failed to read RAM usage open /proc/self/statm";
+    }
+
+    long size, resident, share, text, lib, data, dt;
+    statm >> size >> resident >> share >> text >> lib >> data >> dt;
+    statm.close();
+    long page_size_kb = sysconf(_SC_PAGE_SIZE) / 1024; // in case x86-64 is configured to use 2MB pages
+    long resident_set_kb = resident * page_size_kb;
+    return std::format("RAM usage (resident): {} KB", resident);
+}
 
 std::tuple<uint64_t, uint64_t, uint64_t> parse_line(std::string& line,
                                                     str2id_type& entity2id,
@@ -123,6 +146,7 @@ int main(int argc, char* argv[])
                 if (line_number % 10'000'000UL == 0)
                 {
                     outfile.flush();
+                    std::cerr << get_timestamp_str() << '\n' << get_current_rss_ram_str() << '\n';
                     std::cerr <<
                         std::format("{} lines translated.\n"
                                     "{} entities found.\n"
@@ -133,6 +157,7 @@ int main(int argc, char* argv[])
             }
             catch (const std::exception& e)
             {
+                std::cerr << get_timestamp_str() << '\n' << get_current_rss_ram_str() << '\n';
                 std::cerr << std::format("Error parsing line {}\n{}", line_number, e.what()) << std::endl;
                 std::cerr << std::format("line str:\n{}\n", line) << std::endl;
             }
@@ -141,10 +166,13 @@ int main(int argc, char* argv[])
     }
     catch (std::exception const& e)
     {
+        std::cerr << get_timestamp_str() << '\n' << get_current_rss_ram_str() << '\n';
         std::cerr << std::format("Error indexing ntriple file on line {}\n{}", line_number, e.what()) << std::endl;
         std::cerr << std::format("line str:\n{}\n", line) << std::endl;
+        exit(EXIT_FAILURE);
     }
 
+    std::cerr << get_timestamp_str() << '\n' << get_current_rss_ram_str() << '\n';
     std::cerr << "Finished indexing the ntriple file. " << std::endl;
     std::cerr <<
         std::format("Total data processed:\n"
@@ -156,10 +184,22 @@ int main(int argc, char* argv[])
 
     auto const dump_map = [&](auto const& name, auto const& map)
     {
-        std::cerr << std::format("Start dumping {} mapping. ", name) << std::endl;
-        write_map_to_csv(output_folder / format("{}.{}.csv", file_stem, name), map);
-        std::cerr << std::format("Finished dumping {} mapping. ", name) << std::endl;
+        try
+        {
+            std::cerr << get_timestamp_str() << '\n' << get_current_rss_ram_str() << '\n';
+            std::cerr << std::format("Start dumping {} mapping.\n", name) << std::endl;
+            write_map_to_csv(output_folder / format("{}.{}.csv", file_stem, name), map);
+            std::cerr << get_timestamp_str() << '\n' << get_current_rss_ram_str() << '\n';
+            std::cerr << std::format("Finished dumping {} mapping.\n", name) << std::endl;
+        }
+        catch (std::exception const& e)
+        {
+            std::cerr << get_timestamp_str() << '\n' << get_current_rss_ram_str() << '\n';
+            std::cerr << std::format("Error dumping {}\n{}", name, e.what()) << std::endl;
+            exit(EXIT_FAILURE);
+        }
     };
+
     dump_map("entity2id", entity2id);
     dump_map("relation2id", relation2id);
 }
