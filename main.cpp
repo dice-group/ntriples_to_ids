@@ -20,41 +20,43 @@ std::tuple<uint64_t, uint64_t, uint64_t> parse_line(std::string& line,
     static std::string o(512, '\0');
 
     {
-        auto after_s = line.find_first_of(' ');
-        s.clear();
-        s.append(line.c_str(), after_s);
+        auto extract_triple_element = [](std::string& out,
+                                         std::string_view remaining_line) -> std::string_view
+        {
+            auto const sep_pos = remaining_line.find_first_of(' ');
+            if (sep_pos == std::string::npos)
+            {
+                throw std::runtime_error(std::format("Missing space separator."));
+            }
+            out.assign(remaining_line.substr(0, sep_pos));
+            if (!(out.starts_with('<') && out.ends_with('>')))
+            {
+                throw std::runtime_error(std::format("Missing <> around entity or relation: {}", out));
+            }
+            return remaining_line.substr(sep_pos + 1);
+        };
 
-        auto after_p = line.find_first_of(' ', after_s + 1);
-        p.clear();
-        p.append(line.c_str() + after_s + 1, after_p - after_s - 1);
-
-        auto after_o = line.find_first_of(' ', after_p + 1);
-        o.clear();
-        o.append(line.c_str() + after_p + 1, after_o - after_p - 1);
+        auto remaining_line = std::string_view{line};
+        remaining_line = extract_triple_element(s, remaining_line);
+        remaining_line = extract_triple_element(p, remaining_line);
+        remaining_line = extract_triple_element(o, remaining_line);
+        if (remaining_line != ".")
+        {
+            throw std::runtime_error(std::format("Suspicious line end: {}", remaining_line));
+        }
     }
 
-    auto const s_id = [&]()
+    auto const map_string = [](auto& str2id, auto const& str, auto& next_id) -> size_t
     {
-        auto [it_s, added_s] = entity2id.try_emplace(s, next_entity_id);
-        if (added_s)
-            next_entity_id++;
-        return it_s->second;
-    }();
+        auto [it, was_added] = str2id.try_emplace(str, next_id);
+        if (was_added)
+            ++next_id;
+        return it->second;
+    };
+    auto const s_id = map_string(entity2id, s, next_entity_id);
+    auto const p_id = map_string(relation2id, p, next_relation_id);
+    auto const o_id = map_string(entity2id, o, next_entity_id);
 
-    auto const p_id = [&]()
-    {
-        auto [it_p, added_p] = relation2id.try_emplace(p, next_relation_id);
-        if (added_p)
-            next_relation_id++;
-        return it_p->second;
-    }();
-    auto const o_id = [&]()
-    {
-        auto [it_o, added_o] = entity2id.try_emplace(o, next_entity_id);
-        if (added_o)
-            next_entity_id++;
-        return it_o->second;
-    }();
     return {s_id, p_id, o_id};
 }
 
@@ -106,34 +108,46 @@ int main(int argc, char* argv[])
     str2id_type entity2id;
     str2id_type relation2id;
     uint64_t line_number = 0;
+    std::string line;
+    try
     {
         std::ifstream infile(input_file_path);
-        // std::ofstream outfile_bin(output_folder / "some.ids.bin", std::ios::binary);
         std::ofstream outfile(output_folder / format("{}.ids.csv", file_stem));
-        std::string line;
         while (std::getline(infile, line))
         {
-            auto [s,p,o] = parse_line(line, entity2id, relation2id);
-            outfile << std::format("{},{},{}\n", s, p, o);
-            // outfile_bin.write(reinterpret_cast<const char*>(&s), sizeof(s));
-            // outfile_bin.write(reinterpret_cast<const char*>(&p), sizeof(p));
-            // outfile_bin.write(reinterpret_cast<const char*>(&o), sizeof(o));
-            if (++line_number % 10'000'000UL == 0)
+            ++line_number;
+            try
             {
-                outfile.flush();
-                std::cerr <<
-                    std::format("{} lines translated.\n"
-                                "{} entities found.\n"
-                                "{} relations found.\n",
-                                line_number, entity2id.size(), relation2id.size())
-                    << std::endl;
+                auto [s,p,o] = parse_line(line, entity2id, relation2id);
+                outfile << std::format("{},{},{}\n", s, p, o);
+                if (line_number % 10'000'000UL == 0)
+                {
+                    outfile.flush();
+                    std::cerr <<
+                        std::format("{} lines translated.\n"
+                                    "{} entities found.\n"
+                                    "{} relations found.\n",
+                                    line_number, entity2id.size(), relation2id.size())
+                        << std::endl;
+                }
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << std::format("Error parsing line {}\n{}", line_number, e.what()) << std::endl;
+                std::cerr << std::format("line str:\n{}\n", line) << std::endl;
             }
         }
         outfile.flush();
     }
+    catch (std::exception const& e)
+    {
+        std::cerr << std::format("Error indexing ntriple file on line {}\n{}", line_number, e.what()) << std::endl;
+        std::cerr << std::format("line str:\n{}\n", line) << std::endl;
+    }
+
     std::cerr << "Finished indexing the ntriple file. " << std::endl;
     std::cerr <<
-        std::format("total data processed:\n"
+        std::format("Total data processed:\n"
                     "{} lines translated.\n"
                     "{} entities found.\n"
                     "{} relations found.\n",
